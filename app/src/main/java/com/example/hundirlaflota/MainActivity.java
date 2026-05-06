@@ -4,7 +4,6 @@ import android.content.pm.ActivityInfo;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.text.method.ScrollingMovementMethod;
-import android.view.Surface;
 import android.view.SurfaceView;
 import android.widget.ImageButton;
 import android.widget.TextView;
@@ -17,7 +16,6 @@ import androidx.core.view.WindowInsetsCompat;
 
 import android.graphics.Canvas;
 import android.graphics.Paint;
-
 
 public class MainActivity extends AppCompatActivity {
     //Estat del joc
@@ -68,8 +66,8 @@ public class MainActivity extends AppCompatActivity {
         missatges.setMovementMethod(new ScrollingMovementMethod());
 
         //Dibuix fons dels dos taulers
-        taulerVaixells.post(() -> pintar(taulerVaixells));
-        taulerIntents.post(() -> pintar(taulerIntents));
+        taulerVaixells.post(() -> pintar(taulerVaixells,10,10));
+        taulerIntents.post(() -> pintar(taulerIntents,10,10));
 
         //Accions dels botons
         newGame.setOnClickListener(v -> {
@@ -114,12 +112,31 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    public void pintar(SurfaceView tauler){
-        if(taulerIntents.getHolder().getSurface().isValid()) {
-            if(!tauler.getHolder().getSurface().isValid()) return;
+    public void pintar(SurfaceView tauler, int files, int columnes){
+        if(tauler.getHolder().getSurface().isValid()){
+            int alt = tauler.getHeight();
+            int ampla = tauler.getWidth();
 
             Canvas canvas = tauler.getHolder().lockCanvas();
             canvas.drawColor(Color.parseColor("#ADD8E6"));
+
+            Paint p = new Paint();
+            p.setColor(Color.WHITE);
+            p.setStrokeWidth(3);
+
+            float midaX = ampla/(float) columnes;
+            float midaY = alt/(float) files;
+
+            for(int i = 0; i<=columnes; i++){
+                float x = i*midaX;
+                canvas.drawLine(x,0,x,alt,p);
+            }
+
+            for(int j = 0; j<=files; j++){
+                float y = j*midaY;
+                canvas.drawLine(0,y,ampla,y,p);
+            }
+
             tauler.getHolder().unlockCanvasAndPost(canvas);
         }
     }

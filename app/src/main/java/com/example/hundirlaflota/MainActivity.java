@@ -4,20 +4,24 @@ import android.content.pm.ActivityInfo;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.text.method.ScrollingMovementMethod;
-import android.util.Log;
 import android.view.MotionEvent;
 import android.view.SurfaceView;
+import android.view.View;
 import android.widget.ImageButton;
 import android.widget.TextView;
 
 import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
 import android.graphics.Canvas;
 import android.graphics.Paint;
+
+import java.util.HashSet;
+import java.util.Set;
 
 public class MainActivity extends AppCompatActivity {
     //Estat del joc
@@ -38,6 +42,14 @@ public class MainActivity extends AppCompatActivity {
     ImageButton newGame;
     ImageButton online;
     ImageButton tip;
+
+    Set<View> conjuntPistes = new HashSet<>();
+
+    ConstraintLayout zonaPistes;
+    ConstraintLayout caixaPistes;
+    TextView titolMeus, titolRival, textPistesMeus, textPistesRival;
+    ImageButton botoTancarPistes;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -64,12 +76,32 @@ public class MainActivity extends AppCompatActivity {
         newGame = findViewById(R.id.newGame);
         online = findViewById(R.id.online);
         tip = findViewById(R.id.tip);
+        zonaPistes = findViewById(R.id.zonaPistes);
+        caixaPistes = findViewById(R.id.caixaPistes);
+        titolMeus = findViewById(R.id.titolMeus);
+        titolRival = findViewById(R.id.titolRival);
+        textPistesMeus = findViewById(R.id.textPistesMeus);
+        textPistesRival = findViewById(R.id.textPistesRival);
+        botoTancarPistes = findViewById(R.id.botoTancarPistes);
 
         missatges.setMovementMethod(new ScrollingMovementMethod());
+        textPistesMeus.setMovementMethod(new ScrollingMovementMethod());
+        textPistesRival.setMovementMethod(new ScrollingMovementMethod());
 
         //Dibuix fons dels dos taulers
         taulerVaixells.post(() -> pintar(taulerVaixells,10,10));
         taulerIntents.post(() -> pintar(taulerIntents,10,10));
+
+        conjuntPistes.add(zonaPistes);
+        conjuntPistes.add(caixaPistes);
+        conjuntPistes.add(titolMeus);
+        conjuntPistes.add(titolRival);
+        conjuntPistes.add(textPistesMeus);
+        conjuntPistes.add(textPistesRival);
+        conjuntPistes.add(botoTancarPistes);
+
+        // Inicialment, ocultar la zona de pistes
+        mostraPistes(false);
 
         //Accions dels botons
         newGame.setOnClickListener(v -> {
@@ -91,8 +123,12 @@ public class MainActivity extends AppCompatActivity {
         });
 
         tip.setOnClickListener(v -> {
-            missatges.append("\nPista: (aquí hi aniria la pista)");
+            textPistesMeus.setText("Vaixell de 1 (1): (2,9)\nVaixell de 1(2): (5,8)\n...");
+            textPistesRival.setText("Vaixell de 1 (1): (9,0)\nVaixell de 1 (2): (0,9)\n...");
+            mostraPistes(true);
         });
+
+        botoTancarPistes.setOnClickListener(v -> mostraPistes(false));
 
         // Estat inicial
         actualitzaBotons();
@@ -184,5 +220,12 @@ public class MainActivity extends AppCompatActivity {
             }
         }
         return true;
+    }
+
+    //Mostrar o amagar totes les vistes de pistes
+    private void mostraPistes(boolean mostrar) {
+        for (View v : conjuntPistes) {
+            v.setVisibility(mostrar ? View.VISIBLE : View.GONE);
+        }
     }
 }

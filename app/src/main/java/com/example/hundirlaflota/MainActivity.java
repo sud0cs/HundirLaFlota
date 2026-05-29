@@ -4,6 +4,7 @@ import android.content.pm.ActivityInfo;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.text.method.ScrollingMovementMethod;
+import android.util.Log;
 import android.view.MotionEvent;
 import android.view.SurfaceView;
 import android.view.View;
@@ -24,6 +25,8 @@ import java.util.HashSet;
 import java.util.Set;
 
 public class MainActivity extends AppCompatActivity {
+
+    int scroll = 0;
     //Estat del joc
     enum EstatJoc{ATURADA, JUGANT}
     EstatJoc estatJoc = EstatJoc.ATURADA;
@@ -49,6 +52,8 @@ public class MainActivity extends AppCompatActivity {
     ConstraintLayout caixaPistes;
     TextView titolMeus, titolRival, textPistesMeus, textPistesRival;
     ImageButton botoTancarPistes;
+
+    Casella last_play = null;
 
 
     @Override
@@ -134,6 +139,21 @@ public class MainActivity extends AppCompatActivity {
         actualitzaBotons();
     }
     //Control de l'estat dels botons
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        Log.d("LOG", "onResume: ");
+        if(last_play == null){
+            pintar(taulerVaixells,10,10);
+            pintar(taulerIntents,10,10);
+        }
+        else{
+            pintar(taulerVaixells,10,10);
+            drawGrids(last_play);
+        }
+    }
+
     private void actualitzaBotons() {
         if (estatJoc == EstatJoc.ATURADA) {
             newGame.setEnabled(true);
@@ -203,6 +223,9 @@ public class MainActivity extends AppCompatActivity {
         int posX = (int)Math.floor(((x - taulerIntents.getX())/taulerIntents.getWidth())*10);
         int posY = (int)Math.floor(((y - taulerIntents.getY())/taulerIntents.getHeight())*10);
         missatges.append(String.format("\nCASELLA: (%s,%s)", posX, posY));
+        scroll = missatges.canScrollVertically(missatges.getHeight())?scroll+=(int)missatges.getTextSize()+(int)missatges.getTextSize()/6:scroll;
+        missatges.scrollTo(0, scroll);
+        Log.d("AAAAAAAAAAAAA", String.format("SCALE: %s", scroll));
         DarreraJugada2.setText(String.format("Seleccionada la casella (%s, %s)", posX, posY));
         return new Casella(posX, posY);
     }
@@ -216,7 +239,8 @@ public class MainActivity extends AppCompatActivity {
                 event.getY()<=taulerIntents.getY()+taulerIntents.getHeight()
         ){
             if ((event.getAction() & MotionEvent.ACTION_MASK) == MotionEvent.ACTION_UP) {
-                drawGrids(getCasella(event.getX(), event.getY()));
+                last_play = getCasella(event.getX(), event.getY());
+                drawGrids(last_play);
             }
         }
         return true;

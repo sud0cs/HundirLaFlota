@@ -1,13 +1,13 @@
 package com.example.hundirlaflota;
 public class Vaixell {
     int mida;
-    orientacio orientacio;
-    String color;
-    int jugador;
+    Orientacio orientacio;
+    int color;
+    Jugador jugador;
     int id;
     int tocat; //vegades tocat
 }
-enum orientacio{
+enum Orientacio {
     VERTICAL,
     HORITZONTAL
 }

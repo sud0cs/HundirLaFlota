@@ -6,6 +6,7 @@ import android.os.Bundle;
 import android.text.method.ScrollingMovementMethod;
 import android.util.Log;
 import android.view.MotionEvent;
+import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
 import android.widget.ImageButton;
@@ -21,18 +22,18 @@ import androidx.core.view.WindowInsetsCompat;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Random;
 import java.util.Set;
 
 public class MainActivity extends AppCompatActivity {
 
-    int scroll = 0;
-    //Estat del joc
-    enum EstatJoc{ATURADA, JUGANT}
-    EstatJoc estatJoc = EstatJoc.ATURADA;
-
-
-    //Elements de la interficie
+    enum EstatJoc { ATURAT, JUGANT, EN_ESPERA, ACABAT }
+    EstatJoc estatJoc = EstatJoc.ATURAT;
+    Jugador torn;
     TextView titol;
     TextView DarreraJugada1;
     TextView DarreraJugada2;
@@ -55,6 +56,16 @@ public class MainActivity extends AppCompatActivity {
 
     Casella last_play = null;
 
+    HashMap<Jugador, HashMap<Casella, Vaixell>> vaixellsVius = new HashMap<>();
+    HashMap<Jugador, HashMap<Casella, Vaixell>> vaixellsTocats = new HashMap<>();
+
+    HashSet<Casella> casellesLocal = new HashSet<>();
+    HashSet<Casella> casellesRival = new HashSet<>();
+
+    Casella primerImpacteRival = null;
+    Casella ultimImpacteRival = null;
+    int[] direccioRival = null;
+    ArrayList<int[]> direccionsRestants = new ArrayList<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -68,7 +79,6 @@ public class MainActivity extends AppCompatActivity {
             return insets;
         });
 
-        //Assignació de ID's
         titol = findViewById(R.id.titol);
         DarreraJugada1 = findViewById(R.id.DarreraJugada1);
         DarreraJugada2 = findViewById(R.id.DarreraJugada2);
@@ -93,9 +103,20 @@ public class MainActivity extends AppCompatActivity {
         textPistesMeus.setMovementMethod(new ScrollingMovementMethod());
         textPistesRival.setMovementMethod(new ScrollingMovementMethod());
 
-        //Dibuix fons dels dos taulers
-        taulerVaixells.post(() -> pintar(taulerVaixells,10,10));
-        taulerIntents.post(() -> pintar(taulerIntents,10,10));
+        //Perque es repintin es taulers quan surts de sa app i tornes a entrar
+        SurfaceHolder.Callback callbackTaulers = new SurfaceHolder.Callback() {
+            @Override
+            public void surfaceCreated(SurfaceHolder holder) {
+                repintarGraelles();
+            }
+            @Override
+            public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {}
+            @Override
+            public void surfaceDestroyed(SurfaceHolder holder) {}
+        };
+
+        taulerVaixells.getHolder().addCallback(callbackTaulers);
+        taulerIntents.getHolder().addCallback(callbackTaulers);
 
         conjuntPistes.add(zonaPistes);
         conjuntPistes.add(caixaPistes);
@@ -105,151 +126,423 @@ public class MainActivity extends AppCompatActivity {
         conjuntPistes.add(textPistesRival);
         conjuntPistes.add(botoTancarPistes);
 
-        // Inicialment, ocultar la zona de pistes
         mostraPistes(false);
 
-        //Accions dels botons
-        newGame.setOnClickListener(v -> {
-            estatJoc = EstatJoc.JUGANT;
-            actualitzaBotons();
-            missatges.append("\nNou joc iniciat.");
-        });
-
-        online.setOnClickListener(v -> {
-            estatJoc = EstatJoc.JUGANT;
-            actualitzaBotons();
-            missatges.append("\nConnectant...");
-        });
-
+        newGame.setOnClickListener(v -> iniciarPartida());
+        online.setOnClickListener(v -> missatges.append("\nMode online no implementat."));
         atura.setOnClickListener(v -> {
-            estatJoc = EstatJoc.ATURADA;
+            estatJoc = EstatJoc.ATURAT;
             actualitzaBotons();
-            missatges.append("\nPartida aturada.");
+            scroll();
         });
 
         tip.setOnClickListener(v -> {
-            textPistesMeus.setText("Vaixell de 1 (1): (2,9)\nVaixell de 1(2): (5,8)\n...");
-            textPistesRival.setText("Vaixell de 1 (1): (9,0)\nVaixell de 1 (2): (0,9)\n...");
+            StringBuilder textVaixells = new StringBuilder("");
+            if (vaixellsVius.containsKey(Jugador.LOCAL)) {
+                for (Casella casella : vaixellsVius.get(Jugador.LOCAL).keySet()) {
+                    Vaixell vaixell = vaixellsVius.get(Jugador.LOCAL).get(casella);
+                    textVaixells.append(String.format("Vaixell de %s (%s): (%s,%s)\n", vaixell.mida, vaixell.id, casella.x, casella.y));
+                }
+            }
+            textPistesMeus.setText(textVaixells.toString());
+            textVaixells.setLength(0);
+            if (vaixellsVius.containsKey(Jugador.RIVAL)) {
+                for (Casella casella : vaixellsVius.get(Jugador.RIVAL).keySet()) {
+                    Vaixell vaixell = vaixellsVius.get(Jugador.RIVAL).get(casella);
+                    textVaixells.append(String.format("Vaixell de %s (%s): (%s,%s)\n", vaixell.mida, vaixell.id, casella.x, casella.y));
+                }
+            }
+            textPistesRival.setText(textVaixells.toString());
             mostraPistes(true);
         });
 
         botoTancarPistes.setOnClickListener(v -> mostraPistes(false));
 
-        // Estat inicial
         actualitzaBotons();
     }
-    //Control de l'estat dels botons
 
     @Override
     protected void onResume() {
         super.onResume();
         Log.d("LOG", "onResume: ");
-        if(last_play == null){
-            pintar(taulerVaixells,10,10);
-            pintar(taulerIntents,10,10);
-        }
-        else{
-            pintar(taulerVaixells,10,10);
-            drawGrids(last_play);
-        }
     }
 
     private void actualitzaBotons() {
-        if (estatJoc == EstatJoc.ATURADA) {
+        if (estatJoc == EstatJoc.ATURAT || estatJoc == EstatJoc.ACABAT) {
             newGame.setEnabled(true);
             online.setEnabled(true);
-
             atura.setEnabled(false);
             tip.setEnabled(false);
-        } else { // JUGANT
+        } else {
             newGame.setEnabled(false);
             online.setEnabled(false);
-
             atura.setEnabled(true);
             tip.setEnabled(true);
         }
     }
-    public void pintar(SurfaceView tauler, int files, int columnes, Canvas canvas){
-            int alt = tauler.getHeight();
-            int ampla = tauler.getWidth();
-            canvas.drawColor(Color.parseColor("#ADD8E6"));
-            Paint p = new Paint();
-            p.setColor(Color.WHITE);
-            p.setStrokeWidth(3);
-            float midaX = ampla/(float) columnes;
-            float midaY = alt/(float) files;
 
-            for(int i = 0; i<=columnes; i++){
-                float x = i*midaX;
-                canvas.drawLine(x,0,x,alt,p);
+    public void pintar(SurfaceView tauler, int files, int columnes, Canvas canvas){
+        int alt = tauler.getHeight();
+        int ampla = tauler.getWidth();
+        canvas.drawColor(Color.parseColor("#ADD8E6"));
+        Paint p = new Paint();
+        p.setColor(Color.WHITE);
+        p.setStrokeWidth(3);
+        float midaX = ampla/(float) columnes;
+        float midaY = alt/(float) files;
+
+        for(int i = 0; i<=columnes; i++){
+            float x = i*midaX;
+            canvas.drawLine(x,0,x,alt,p);
+        }
+        for(int j = 0; j<=files; j++){
+            float y = j*midaY;
+            canvas.drawLine(0,y,ampla,y,p);
+        }
+
+        Jugador jugador = (tauler == taulerVaixells) ? Jugador.LOCAL : Jugador.RIVAL;
+        HashSet<Casella> atacsRival = (jugador == Jugador.LOCAL) ? casellesRival : casellesLocal;
+
+        if (jugador == Jugador.LOCAL && vaixellsVius.containsKey(jugador)) {
+            HashMap<Casella, Vaixell> mapVius = vaixellsVius.get(jugador);
+            for (Casella casella : mapVius.keySet()) {
+                Vaixell vaixell = mapVius.get(casella);
+                Paint pRect = new Paint();
+                pRect.setStyle(Paint.Style.FILL);
+                pRect.setColor(vaixell.color);
+                canvas.drawRoundRect(casella.x * midaX + 2, casella.y * midaY + 2, (casella.x + 1) * midaX -2, (casella.y + 1) * midaY -2, 20, 20, pRect);
             }
-            for(int j = 0; j<=files; j++){
-                float y = j*midaY;
-                canvas.drawLine(0,y,ampla,y,p);
-            }
+        }
+
+        Paint pAigua = new Paint();
+        pAigua.setColor(Color.WHITE);
+        pAigua.setAlpha(180);
+
+        Paint pTocat = new Paint();
+        pTocat.setColor(Color.RED);
+        pTocat.setAlpha(200);
+
+        HashMap<Casella, Vaixell> tocats = vaixellsTocats.get(jugador);
+
+        for (Casella c : atacsRival) {
+            Paint pCurrent = (tocats != null && tocats.containsKey(c)) ? pTocat : pAigua;
+            canvas.drawRoundRect(c.x * midaX + 2, c.y * midaY + 2, (c.x + 1) * midaX -2, (c.y + 1) * midaY -2, 20, 20, pCurrent);
+
+            Paint pMarc = new Paint();
+            pMarc.setColor(Color.BLACK);
+            canvas.drawCircle((c.x * midaX) + (midaX / 2), (c.y * midaY) + (midaY / 2), midaX / 6, pMarc);
+        }
     }
+
     public void pintar(SurfaceView tauler, int files, int columnes){
         if(tauler.getHolder().getSurface().isValid()){
             Canvas canvas = tauler.getHolder().lockCanvas();
-            pintar(tauler, files, columnes, canvas);
-            tauler.getHolder().unlockCanvasAndPost(canvas);
+            if (canvas != null) {
+                pintar(tauler, files, columnes, canvas);
+                tauler.getHolder().unlockCanvasAndPost(canvas);
+            }
         }
     }
 
-    private void drawSingleGrid(Casella c, SurfaceView tauler){
-        if(tauler.getHolder().getSurface().isValid()){
-            Canvas canvas = tauler.getHolder().lockCanvas();
-            /*
-            Hardcoded amount of rows and columns.
-            Maybe change that?
-             */
-            pintar(tauler, 10, 10, canvas);
-            float x = tauler.getWidth()/(float)10;
-            float y = tauler.getHeight()/(float)10;
-            Paint p = new Paint();
-            p.setStyle(Paint.Style.STROKE);
-            p.setStrokeWidth(5);
-            p.setColor(Color.RED);
-            canvas.drawRoundRect(c.x*x,c.y*y,c.x*x + x,c.y*y + y,25,25,p);
-            tauler.getHolder().unlockCanvasAndPost(canvas);
-        }
-    }
-
-    public void drawGrids(Casella c){
-        drawSingleGrid(c, taulerIntents);
+    private void repintarGraelles() {
+        pintar(taulerVaixells,10,10);
+        pintar(taulerIntents,10,10);
     }
 
     private Casella getCasella(float x, float y){
         int posX = (int)Math.floor(((x - taulerIntents.getX())/taulerIntents.getWidth())*10);
         int posY = (int)Math.floor(((y - taulerIntents.getY())/taulerIntents.getHeight())*10);
-        missatges.append(String.format("\nCASELLA: (%s,%s)", posX, posY));
-        scroll = missatges.canScrollVertically(missatges.getHeight())?scroll+=(int)missatges.getTextSize()+(int)missatges.getTextSize()/6:scroll;
-        missatges.scrollTo(0, scroll);
-        Log.d("AAAAAAAAAAAAA", String.format("SCALE: %s", scroll));
+        posY = Math.min(posY, 9);
+
         DarreraJugada2.setText(String.format("Seleccionada la casella (%s, %s)", posX, posY));
         return new Casella(posX, posY);
     }
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
+        if (estatJoc != EstatJoc.JUGANT || torn != Jugador.LOCAL) return true;
+
         if(
                 event.getX()>=taulerIntents.getX() &&
-                event.getX()<=taulerIntents.getX()+taulerIntents.getWidth() &&
-                event.getY()>=taulerIntents.getY() &&
-                event.getY()<=taulerIntents.getY()+taulerIntents.getHeight()
+                        event.getX()<=taulerIntents.getX()+taulerIntents.getWidth() &&
+                        event.getY()>=taulerIntents.getY() &&
+                        event.getY()<=taulerIntents.getY()+taulerIntents.getHeight()
         ){
             if ((event.getAction() & MotionEvent.ACTION_MASK) == MotionEvent.ACTION_UP) {
                 last_play = getCasella(event.getX(), event.getY());
-                drawGrids(last_play);
+
+                if (!casellesLocal.contains(last_play)) {
+                    processarJugada(last_play, Jugador.LOCAL);
+                }
             }
         }
         return true;
     }
+    private void scroll() {
+        missatges.post(() -> {
+            if (missatges.getLayout() != null) {
+                int scrollAmount = missatges.getLayout().getLineTop(missatges.getLineCount()) - missatges.getHeight();
+                missatges.scrollTo(0, Math.max(scrollAmount, 0));
+            }
+        });
+    }
 
-    //Mostrar o amagar totes les vistes de pistes
     private void mostraPistes(boolean mostrar) {
         for (View v : conjuntPistes) {
             v.setVisibility(mostrar ? View.VISIBLE : View.GONE);
         }
+    }
+
+    private void iniciarPartida() {
+        vaixellsVius.clear();
+        vaixellsTocats.clear();
+        casellesLocal.clear();
+        casellesRival.clear();
+
+        primerImpacteRival = null;
+        ultimImpacteRival = null;
+        direccioRival = null;
+        direccionsRestants.clear();
+
+        last_play = null;
+
+        crearVaixells(Jugador.LOCAL);
+        crearVaixells(Jugador.RIVAL);
+
+        Random r = new Random();
+        torn = r.nextBoolean() ? Jugador.LOCAL : Jugador.RIVAL;
+
+        estatJoc = (torn == Jugador.LOCAL) ? EstatJoc.JUGANT : EstatJoc.EN_ESPERA;
+
+        missatges.setText("Nou joc iniciat.\nComença: " + (torn == Jugador.LOCAL ? "Tu" : "Rival"));
+        DarreraJugada1.setText("---");
+        DarreraJugada2.setText("---");
+
+        actualitzaBotons();
+        repintarGraelles();
+
+        if (torn == Jugador.RIVAL) {
+            taulerIntents.postDelayed(this::ferJugadaRobot, 500);
+        }
+    }
+
+    private void processarJugada(Casella c, Jugador atacant) {
+        Jugador defensor = (atacant == Jugador.LOCAL) ? Jugador.RIVAL : Jugador.LOCAL;
+        HashSet<Casella> destapades = (atacant == Jugador.LOCAL) ? casellesLocal : casellesRival;
+        if (destapades.contains(c)) return;
+        destapades.add(c);
+
+        HashMap<Casella, Vaixell> vius = vaixellsVius.get(defensor);
+        HashMap<Casella, Vaixell> tocats = vaixellsTocats.get(defensor);
+        if (tocats == null) {
+            tocats = new HashMap<>();
+            vaixellsTocats.put(defensor, tocats);
+        }
+
+        boolean encert = false;
+        String textTipus = "Aigua";
+
+        if (vius != null) {
+            if (vius.containsKey(c)) {
+                Vaixell v = vius.get(c);
+                vius.remove(c);
+                tocats.put(c, v);
+                v.tocat++;
+                encert = true;
+
+                if (v.tocat == v.mida) {
+                    textTipus = "Enfonsat!";
+                } else {
+                    textTipus = "Tocat!";
+                }
+            }
+        }
+
+        if (atacant == Jugador.RIVAL) {
+            if (encert) {
+                if (textTipus.equals("Enfonsat!")) {
+                    primerImpacteRival = null;
+                    ultimImpacteRival = null;
+                    direccioRival = null;
+                    direccionsRestants.clear();
+                } else {
+                    if (primerImpacteRival == null) {
+                        primerImpacteRival = c;
+                        ultimImpacteRival = c;
+                        direccionsRestants.add(new int[]{1, 0});
+                        direccionsRestants.add(new int[]{-1, 0});
+                        direccionsRestants.add(new int[]{0, 1});
+                        direccionsRestants.add(new int[]{0, -1});
+                        Collections.shuffle(direccionsRestants);
+                    } else {
+                        direccioRival = new int[]{c.x - ultimImpacteRival.x, c.y - ultimImpacteRival.y};
+                        ultimImpacteRival = c;
+                    }
+                }
+            } else {
+                if (direccioRival != null) {
+                    direccioRival = new int[]{-direccioRival[0], -direccioRival[1]};
+                    ultimImpacteRival = primerImpacteRival;
+                }
+            }
+        }
+
+        String textAtac = atacant == Jugador.LOCAL ? "Tu ataques a " : "Rival ataca a ";
+        String textFinal = textAtac + "(" + c.x + "," + c.y + "): " + textTipus;
+        missatges.append("\n" + textFinal);
+
+        scroll();
+
+        if (atacant == Jugador.LOCAL) DarreraJugada1.setText(textFinal);
+        else DarreraJugada2.setText(textFinal);
+
+        repintarGraelles();
+
+        if (vius == null || vius.isEmpty()) {
+            estatJoc = EstatJoc.ACABAT;
+            actualitzaBotons();
+            missatges.append("\n\nPARTIDA ACABADA. Guanya: " + (atacant == Jugador.LOCAL ? "Tu!" : "El Rival!"));
+            scroll();
+            return;
+        }
+
+        if (!encert) {
+            torn = defensor;
+            if (torn == Jugador.LOCAL) {
+                estatJoc = EstatJoc.JUGANT;
+            } else {
+                estatJoc = EstatJoc.EN_ESPERA;
+                taulerIntents.postDelayed(this::ferJugadaRobot, 500);
+            }
+        } else {
+            if (atacant == Jugador.RIVAL) {
+                taulerIntents.postDelayed(this::ferJugadaRobot, 500);
+            }
+        }
+    }
+
+    private void ferJugadaRobot() {
+        if (estatJoc != EstatJoc.EN_ESPERA) return;
+
+        Casella objectiu = null;
+
+        if (direccioRival != null) {
+            boolean valid = false;
+            while (!valid) {
+                Casella cand = new Casella(ultimImpacteRival.x + direccioRival[0], ultimImpacteRival.y + direccioRival[1]);
+                if (esDinsGraella(cand) && !casellesRival.contains(cand)) {
+                    objectiu = cand;
+                    valid = true;
+                } else {
+                    direccioRival = new int[]{-direccioRival[0], -direccioRival[1]};
+                    ultimImpacteRival = primerImpacteRival;
+
+                    cand = new Casella(ultimImpacteRival.x + direccioRival[0], ultimImpacteRival.y + direccioRival[1]);
+                    if (esDinsGraella(cand) && !casellesRival.contains(cand)) {
+                        objectiu = cand;
+                        valid = true;
+                    } else {
+                        direccioRival = null;
+                        primerImpacteRival = null;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (objectiu == null && primerImpacteRival != null) {
+            while (!direccionsRestants.isEmpty() && objectiu == null) {
+                int[] dir = direccionsRestants.remove(0);
+                Casella cand = new Casella(primerImpacteRival.x + dir[0], primerImpacteRival.y + dir[1]);
+                if (esDinsGraella(cand) && !casellesRival.contains(cand)) {
+                    objectiu = cand;
+                }
+            }
+            if (objectiu == null) {
+                primerImpacteRival = null;
+            }
+        }
+
+        Random r = new Random();
+        while (objectiu == null) {
+            Casella cand = new Casella(r.nextInt(10), r.nextInt(10));
+            if (!casellesRival.contains(cand)) {
+                objectiu = cand;
+            }
+        }
+
+        processarJugada(objectiu, Jugador.RIVAL);
+    }
+
+    private boolean esDinsGraella(Casella c) {
+        return c.x >= 0 && c.x < 10 && c.y >= 0 && c.y < 10;
+    }
+
+    public void crearVaixells(Jugador jugador) {
+        if (!vaixellsVius.containsKey(jugador)) {
+            vaixellsVius.put(jugador, new HashMap<>());
+        }
+        int id = 0;
+        HashMap<Casella, Vaixell> caselles = vaixellsVius.get(jugador);
+        int[] midaVaixells = {4, 3, 3, 2, 2, 2, 1, 1, 1, 1};
+        int[] colors = {0xff706edd, 0xffdd866e, 0xffdd6ebe, 0xff6eddcf};
+        Random rand = new Random();
+
+        for (int mida : midaVaixells) {
+            boolean colocat = false;
+            while (!colocat) {
+                int orientacioVal = rand.nextInt(2);
+                Orientacio orientacio = (orientacioVal == 0) ? Orientacio.HORITZONTAL : Orientacio.VERTICAL;
+                int maxX = (orientacio == Orientacio.HORITZONTAL) ? 10 - mida : 10;
+                int maxY = (orientacio == Orientacio.VERTICAL) ? 10 - mida : 10;
+
+                int x = rand.nextInt(maxX);
+                int y = rand.nextInt(maxY);
+
+                if (esPosicioValida(x, y, mida, orientacio, jugador)) {
+                    Vaixell vaixell = new Vaixell();
+                    vaixell.mida = mida;
+                    vaixell.orientacio = orientacio;
+                    vaixell.jugador = jugador;
+                    vaixell.id = id++;
+                    vaixell.tocat = 0;
+                    vaixell.color = colors[mida - 1];
+
+                    for (int i = 0; i < mida; i++) {
+                        int cx = x + (orientacio == Orientacio.HORITZONTAL ? i : 0);
+                        int cy = y + (orientacio == Orientacio.VERTICAL ? i : 0);
+                        caselles.put(new Casella(cx, cy), vaixell);
+                    }
+                    colocat = true;
+                }
+            }
+        }
+    }
+
+    private boolean esPosicioValida(int x, int y, int mida, Orientacio orientacio, Jugador jugador) {
+        if (orientacio == Orientacio.HORITZONTAL && x + mida - 1 > 9) return false;
+        if (orientacio == Orientacio.VERTICAL && y + mida - 1 > 9) return false;
+
+        Set<Casella> nuevas = new HashSet<>();
+        HashMap<Casella, Vaixell> m = vaixellsVius.get(jugador);
+
+        for (int i = 0; i < mida; i++) {
+            int nx = orientacio == Orientacio.HORITZONTAL ? x + i : x;
+            int ny = orientacio == Orientacio.VERTICAL ? y + i : y;
+            Casella c = new Casella(nx, ny);
+
+            if (m != null && m.containsKey(c)) return false;
+            nuevas.add(c);
+        }
+
+        if (m == null) return true;
+
+        for (Casella casella : m.keySet()) {
+            for (Casella n : nuevas) {
+                if (Math.max(Math.abs(n.x - casella.x), Math.abs(n.y - casella.y)) <= 1)
+                    return false;
+            }
+        }
+        return true;
     }
 }

@@ -22,6 +22,9 @@ import androidx.core.view.WindowInsetsCompat;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 
+import org.json.JSONObject;
+import org.json.JSONException;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -38,6 +41,10 @@ public class MainActivity extends AppCompatActivity {
     TextView DarreraJugada1;
     TextView DarreraJugada2;
     TextView missatges;
+
+    private GestorWebSocket gestorWebSocket;
+    private boolean connectat = false;
+    private boolean onlineMode = false;
 
     SurfaceView taulerIntents;
     SurfaceView taulerVaixells;
@@ -129,7 +136,7 @@ public class MainActivity extends AppCompatActivity {
         mostraPistes(false);
 
         newGame.setOnClickListener(v -> iniciarPartida());
-        online.setOnClickListener(v -> missatges.append("\nMode online no implementat."));
+        online.setOnClickListener(v -> connecta());
         atura.setOnClickListener(v -> {
             estatJoc = EstatJoc.ATURAT;
             actualitzaBotons();
@@ -157,6 +164,34 @@ public class MainActivity extends AppCompatActivity {
         });
 
         botoTancarPistes.setOnClickListener(v -> mostraPistes(false));
+
+        gestorWebSocket = new GestorWebSocket(
+                new GestorWebSocket.EscoltadorWebSocket() {
+            @Override
+            public void enConnectar() {
+                runOnUiThread(() -> mostrarMissatge("WS: Connectat"));
+                connectat = true;
+            }
+
+            @Override
+            public void enRebreMissatge(JSONObject json) {
+                runOnUiThread(() -> gestionarMissatge(json));
+            }
+
+            @Override
+            public void enDesconnectar() {
+                runOnUiThread(() ->
+                        mostrarMissatge("WS: Desconnectat"));
+                connectat = false;
+            }
+
+            @Override
+            public void enError(String error) {
+                runOnUiThread(() ->
+                        mostrarMissatge("WS: Error: " + error)
+                );
+            }
+        });
 
         actualitzaBotons();
     }
@@ -272,12 +307,27 @@ public class MainActivity extends AppCompatActivity {
                 last_play = getCasella(event.getX(), event.getY());
 
                 if (!casellesLocal.contains(last_play)) {
-                    processarJugada(last_play, Jugador.LOCAL);
+                    //processarJugada(last_play, Jugador.LOCAL);
+                    if(onlineMode) enviarTirada(last_play);
+                    else processarJugada(last_play, Jugador.LOCAL);;
                 }
             }
         }
         return true;
     }
+
+    private void enviarTirada(Casella c){
+        try{
+            JSONObject json = new JSONObject();
+            json.put("tipus","tirar");
+            json.put("fila",c.y);
+            json.put("columna",c.x);
+            gestorWebSocket.enviar(json);
+        } catch(JSONException e){
+            mostrarMissatge("Error enviant tirada: " + e.getMessage());
+        }
+    }
+
     private void scroll() {
         missatges.post(() -> {
             if (missatges.getLayout() != null) {
@@ -544,5 +594,240 @@ public class MainActivity extends AppCompatActivity {
             }
         }
         return true;
+    }
+
+    private JSONObject construirJsonVaixells(int jugador) throws JSONException{
+        JSONObject jsonVaixells = new JSONObject();
+        ArrayList<JSONObject> llista = new ArrayList<>();
+
+        HashMap<Casella, Vaixell> mapa = vaixellsVius.get(Jugador.LOCAL);
+
+        for(Casella c : mapa.keySet()){
+            Vaixell v = mapa.get(c);
+
+            JSONObject jsonCasella = new JSONObject();
+            jsonCasella.put("i", c.y);
+            jsonCasella.put("j", c.x);
+
+            JSONObject jsonVaixell = new JSONObject();
+            jsonVaixell.put("mida", v.mida);
+            jsonVaixell.put("orientacio", v.orientacio == Orientacio.HORITZONTAL ? 0 : 1);
+            jsonVaixell.put("color", v.color);
+            jsonVaixell.put("id", v.id);
+
+            JSONObject entrada = new JSONObject();
+            entrada.put("casella", jsonCasella);
+            entrada.put("vaixell", jsonVaixell);
+
+            llista.add(entrada);
+        }
+        jsonVaixells.put("casellesVaixellsVius", llista);
+        return jsonVaixells;
+    }
+
+    private void enviarCercarPartida(){
+        try{
+            JSONObject json = new JSONObject();
+            json.put("tipus", "cercar_partida");
+            gestorWebSocket.enviar(json);
+        } catch(JSONException e){
+            mostrarMissatge("Error enviat cercar_partida: " + e.getMessage());
+        }
+    }
+
+    private void carregarVaixellsRival(JSONObject json){
+        vaixellsVius.put(Jugador.RIVAL, new HashMap<>());
+
+        try{
+            ArrayList<Object> llista = (ArrayList<Object>) json.get("casellesVaixellsVius");
+
+            for(Object o : llista){
+                JSONObject entrada = (JSONObject) o;
+
+                JSONObject c = entrada.getJSONObject("casella");
+                int i = c.getInt("i");
+                int j = c.getInt("j");
+
+                JSONObject v = entrada.getJSONObject("vaixell");
+                int mida = v.getInt("mida");
+                int orient = v.getInt("orientacio");
+                int color = v.getInt("color");
+                int id = v.getInt("id");
+
+                Vaixell vaixell = new Vaixell();
+                vaixell.mida = mida;
+                vaixell.color = color;
+                vaixell.id = id;
+                vaixell.orientacio = (orient == 0 ? Orientacio.HORITZONTAL : Orientacio.VERTICAL);
+                vaixell.jugador = Jugador.RIVAL;
+
+                vaixellsVius.get(Jugador.RIVAL).put(new Casella(j,i), vaixell);
+            }
+        } catch(Exception e){
+            mostrarMissatge("Error arregant vaixells rival: " + e.getMessage());
+        }
+    }
+
+    private void gestionarPartidaTrobada(JSONObject json){
+        boolean etToca = json.optBoolean("etToca", false);
+        JSONObject rival = json.optJSONObject("rival");
+
+        if(rival != null){
+            JSONObject vaixellsRival = rival.optJSONObject("vaixells");
+            if(vaixellsRival != null){
+                carregarVaixellsRival(vaixellsRival);
+            }
+        }
+
+        mostrarMissatge("Partida troabada!");
+
+        torn = etToca ? Jugador.LOCAL : Jugador.RIVAL;
+        estatJoc = etToca ? EstatJoc.JUGANT : EstatJoc.EN_ESPERA;
+
+        repintarGraelles();
+    }
+
+    private void gestionarTirRebut(JSONObject json){
+        try{
+            int fila = json.getInt("fila");
+            int col = json.getInt("columna");
+
+            Casella c = new Casella(col,fila);
+
+            processarJugada(c, Jugador.RIVAL);
+
+            boolean encert = vaixellsTocats.get(Jugador.LOCAL).containsKey(c);
+            boolean enfonsat = false;
+
+            if(encert){
+                Vaixell v = vaixellsTocats.get(Jugador.LOCAL).get(c);
+                if(v.tocat == v.mida) enfonsat = true;
+            }
+
+            boolean acabat = vaixellsVius.get(Jugador.LOCAL).isEmpty();
+            String resultat = encert ? (enfonsat ? "enfonsat" : "tocat") : "aigua";
+
+            enviarResultatTir(c, resultat, acabat);
+
+        } catch(JSONException e) {
+            mostrarMissatge("Error tir rebut: " + e.getMessage());
+        }
+    }
+
+    private void gestionarResultatTir(JSONObject json){
+        try{
+            int fila = json.getInt("fila");
+            int col = json.getInt("columna");
+            String resultat = json.getString("resultat");
+            boolean acabat = json.getBoolean("acabat");
+
+            Casella c = new Casella(col,fila);
+
+            casellesLocal.add(c);
+
+            if(resultat.equals("tocat") || resultat.equals("enfonsat")){
+                Vaixell v = vaixellsVius.get(Jugador.RIVAL).get(c);
+                vaixellsVius.get(Jugador.RIVAL).remove(c);
+                vaixellsTocats.get(Jugador.RIVAL).put(c,v);
+            }
+
+            repintarGraelles();
+
+            if(acabat){
+                estatJoc = EstatJoc.ACABAT;
+                mostrarMissatge("Has guanyat!");
+                return;
+            }
+
+            torn = Jugador.RIVAL;
+            estatJoc = EstatJoc.EN_ESPERA;
+        } catch(JSONException e){
+            mostrarMissatge("Error resultat tir: " + e.getMessage());
+        }
+    }
+
+    private void enviarResultatTir(Casella c, String resultat, boolean acabat){
+        try{
+            JSONObject json = new JSONObject();
+            json.put("tipus", "resultat_tir");
+            json.put("fila", c.y);
+            json.put("columna", c.x);
+            json.put("resultat", resultat);
+            json.put("acabat", resultat);
+            json.put("acabat", acabat);
+            gestorWebSocket.enviar(json);
+        } catch(JSONException e){
+            mostrarMissatge("Error enviat resultat tir: " + e.getMessage());
+        }
+    }
+
+    private void gestionarAturaPartida(){
+        mostrarMissatge("El rival ha sortir de la partida.");
+        estatJoc = EstatJoc.ACABAT;
+        onlineMode = false;
+        gestorWebSocket.tancar();
+    }
+
+    private void mostrarMissatge(String txt) {
+        missatges.append("\n" + txt);
+        scroll();
+    }
+
+    public void connecta(){
+        onlineMode = true;
+        mostrarMissatge("Connectant al servidor...");
+        gestorWebSocket.connectar("wss://hci.uib.es/ws");
+        estatJoc = EstatJoc.EN_ESPERA;
+        actualitzaBotons();
+    }
+
+    private void enviarRegistrar(String nomUsuari) {
+        try {
+            JSONObject json = new JSONObject();
+            json.put("tipus", "registrar");
+            json.put("nomUsuari", nomUsuari);
+            json.put("vaixells", construirJsonVaixells(0));
+            gestorWebSocket.enviar(json);
+        } catch (JSONException e) {
+            mostrarMissatge("Error␣enviant␣registrar:␣" + e.getMessage());
+        }
+    }
+
+    private void gestionarMissatge(JSONObject json) {
+        try {
+            String tipus = json.getString("tipus"); // llegir el tipus
+            switch (tipus) { // processar el tipus
+                case "connectat":
+                    enviarRegistrar("Pirata");
+                    break;
+                case "registre_acceptat":
+                    enviarCercarPartida();
+                    break;
+                case "esperant_rival":
+                    mostrarMissatge("Esperant␣rival...");
+                    break;
+                case "partida_trobada":
+                    gestionarPartidaTrobada(json);
+                    break;
+                case "tir_rebut":
+                    gestionarTirRebut(json);
+                    break;
+                case "resultat_tir":
+                    gestionarResultatTir(json);
+                    break;
+                case "rival_ha_sortit":
+                case "rival_desconnectat":
+                    gestionarAturaPartida();
+                    break;
+                case "error":
+                    mostrarMissatge(json.optString("missatge"));
+                    break;
+                default:
+                    mostrarMissatge("Missatge␣desconegut:␣" + json.toString());
+                    break;
+            }
+        } catch (JSONException e) {
+            mostrarMissatge("Error␣JSON:␣" + e.getMessage());
+        }
     }
 }

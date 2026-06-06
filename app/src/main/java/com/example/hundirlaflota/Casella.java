@@ -21,4 +21,8 @@ public class Casella {
     public int hashCode() {
         return (this.x*100)+this.y;
     }
+
+    public String toString(){
+        return "{\"i\":" + y + ",\"j\":" + x + "}";
+    }
 }

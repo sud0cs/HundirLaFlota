@@ -146,11 +146,6 @@ public class MainActivity extends AppCompatActivity {
             actualitzaBotons();
             mostrarMissatge("Has sortit de la partida.");
         });
-        /*atura.setOnClickListener(v -> {
-            estatJoc = EstatJoc.ATURAT;
-            actualitzaBotons();
-            scroll();
-        });*/
 
         tip.setOnClickListener(v -> {
             StringBuilder textVaixells = new StringBuilder("");
@@ -321,7 +316,6 @@ public class MainActivity extends AppCompatActivity {
                 last_play = getCasella(event.getX(), event.getY());
 
                 if (!casellesLocal.contains(last_play)) {
-                    //processarJugada(last_play, Jugador.LOCAL);
                     if(onlineMode) enviarTirada(last_play);
                     else processarJugada(last_play, Jugador.LOCAL);
                 }
@@ -662,27 +656,8 @@ public class MainActivity extends AppCompatActivity {
         try{
             JSONArray llista = json.getJSONArray("casellesVaixellsVius");
 
-            /*if (data instanceof JSONObject) {
-                // Format antic
-                llista = ((JSONObject) data).getJSONArray("casellesVaixellsVius");
-            } else if (data instanceof JSONArray) {
-                // Format real del servidor
-                llista = (JSONArray) data;
-            } else {
-                mostrarMissatge("Format desconegut de vaixells rival");
-                return;
-            }*/
-
             for(int k = 0; k<llista.length(); k++){
                 JSONObject entrada = llista.getJSONObject(k);
-
-                /*Object casellaObj = entrada.get("casella");
-
-                if(!(casellaObj instanceof JSONObject)){
-                    mostrarMissatge("Casella rebuda malformada: " + casellaObj);
-                    continue;
-                }
-                JSONObject c = (JSONObject) casellaObj;*/
 
                 JSONObject c = entrada.getJSONObject("casella");
                 int i = c.getInt("i");
@@ -717,10 +692,6 @@ public class MainActivity extends AppCompatActivity {
             if(vaixellsRival != null){
                 carregarVaixellsRival(vaixellsRival);
             }
-            /*Object vaixellsRival = rival.opt("vaixells");
-            if(vaixellsRival != null){
-                carregarVaixellsRival(vaixellsRival);
-            }*/
         }
 
         mostrarMissatge("Partida troabada!");
@@ -857,19 +828,6 @@ public class MainActivity extends AppCompatActivity {
             mostrarMissatge("Error␣enviant␣registrar:␣" + e.getMessage());
         }
     }
-
-    /*private void gestionarAturaPartidaLocal(){
-        try{
-            JSONObject json = new JSONObject();
-            json.put("tipus", "sortir_partida");
-            gestorWebSocket.enviar(json);
-        } catch(Exception ignored){}
-
-        gestorWebSocket.tancar();
-        onlineMode = false;
-        estatJoc = EstatJoc.ATURAT;
-        actualitzaBotons();
-    }*/
 
     private void enviarSortirPartida(){
         try{

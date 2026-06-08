@@ -1,14 +1,21 @@
 package com.example.hundirlaflota;
 
 import android.content.pm.ActivityInfo;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.text.Html;
 import android.text.method.ScrollingMovementMethod;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
+import android.widget.Button;
 import android.widget.ImageButton;
 import android.widget.TextView;
 
@@ -28,10 +35,15 @@ import org.json.JSONException;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.Queue;
 import java.util.Random;
 import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -46,6 +58,7 @@ public class MainActivity extends AppCompatActivity {
     private GestorWebSocket gestorWebSocket;
     private boolean connectat = false;
     private boolean onlineMode = false;
+    int idVaixell = 0;
 
     SurfaceView taulerIntents;
     SurfaceView taulerVaixells;
@@ -56,24 +69,39 @@ public class MainActivity extends AppCompatActivity {
     ImageButton tip;
 
     Set<View> conjuntPistes = new HashSet<>();
+    Set<View> conjuntFinalJoc = new HashSet<>();
 
     ConstraintLayout zonaPistes;
     ConstraintLayout caixaPistes;
     TextView titolMeus, titolRival, textPistesMeus, textPistesRival;
     ImageButton botoTancarPistes;
 
+    ConstraintLayout zonaFinalJoc;
+    ConstraintLayout caixaFinalJoc;
+    TextView titolFinalJoc;
+    ImageButton botoTancarFinalJoc;
+    Button botoResum;
+
+    SurfaceView srfcResumLocal, srfcResumRival;
+
     Casella last_play = null;
 
     HashMap<Jugador, HashMap<Casella, Vaixell>> vaixellsVius = new HashMap<>();
     HashMap<Jugador, HashMap<Casella, Vaixell>> vaixellsTocats = new HashMap<>();
 
+    HashMap<Jugador, HashMap<Casella, Vaixell>> vaixells = new HashMap<>();
+
     HashSet<Casella> casellesLocal = new HashSet<>();
     HashSet<Casella> casellesRival = new HashSet<>();
+
+    HashMap<Jugador, TreeMap<Vaixell, TreeSet<Casella>>> mappingVaixellCaselles = new HashMap<>();
 
     Casella primerImpacteRival = null;
     Casella ultimImpacteRival = null;
     int[] direccioRival = null;
     ArrayList<int[]> direccionsRestants = new ArrayList<>();
+
+    LinkedList<Jugada> historial = new LinkedList<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -107,11 +135,19 @@ public class MainActivity extends AppCompatActivity {
         textPistesRival = findViewById(R.id.textPistesRival);
         botoTancarPistes = findViewById(R.id.botoTancarPistes);
 
+        zonaFinalJoc = findViewById(R.id.zonaFinalJoc);
+        caixaFinalJoc = findViewById(R.id.caixaFinalJoc);
+        botoTancarFinalJoc = findViewById(R.id.botoTancarFinalJoc);
+        titolFinalJoc = findViewById(R.id.titolFinalJoc);
+        srfcResumLocal = findViewById(R.id.FinalJocResumLocal);
+        srfcResumRival = findViewById(R.id.FinalJocResumRival);
+        botoResum = findViewById(R.id.botoResum);
+
         missatges.setMovementMethod(new ScrollingMovementMethod());
         textPistesMeus.setMovementMethod(new ScrollingMovementMethod());
         textPistesRival.setMovementMethod(new ScrollingMovementMethod());
 
-        //Perque es repintin es taulers quan surts de sa app i tornes a entrar
+
         SurfaceHolder.Callback callbackTaulers = new SurfaceHolder.Callback() {
             @Override
             public void surfaceCreated(SurfaceHolder holder) {
@@ -123,8 +159,47 @@ public class MainActivity extends AppCompatActivity {
             public void surfaceDestroyed(SurfaceHolder holder) {}
         };
 
+        SurfaceHolder.Callback callbackResumLocal = new SurfaceHolder.Callback() {
+            @Override
+            public void surfaceCreated(SurfaceHolder holder) {
+                if(srfcResumLocal.getHolder().getSurface().isValid()) {
+                    Canvas canvas = srfcResumLocal.getHolder().lockCanvas();
+                    if (canvas != null) {
+                        Bitmap img = historial.peekLast().jugador == Jugador.LOCAL? BitmapFactory.decodeResource(getResources(), R.drawable.winner) : BitmapFactory.decodeResource(getResources(), R.drawable.loser);
+                        canvas.drawColor(Color.parseColor("#ADD8E6"));
+                        canvas.drawBitmap(img, new Rect(0,0,img.getWidth(),img.getHeight()), new Rect(0,0,canvas.getWidth(), canvas.getHeight()), null);
+                    }
+                    srfcResumLocal.getHolder().unlockCanvasAndPost(canvas);
+                }
+            }
+            @Override
+            public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {}
+            @Override
+            public void surfaceDestroyed(SurfaceHolder holder) {}
+        };
+
+        SurfaceHolder.Callback callbackResumRival = new SurfaceHolder.Callback() {
+            @Override
+            public void surfaceCreated(SurfaceHolder holder) {
+                if(srfcResumRival.getHolder().getSurface().isValid()) {
+                    Canvas canvas = srfcResumRival.getHolder().lockCanvas();
+                    if (canvas != null) {
+                        Bitmap img = historial.peekLast().jugador == Jugador.LOCAL? BitmapFactory.decodeResource(getResources(), R.drawable.winner) : BitmapFactory.decodeResource(getResources(), R.drawable.loser);
+                        canvas.drawColor(Color.parseColor("#ADD8E6"));
+                        canvas.drawBitmap(img, new Rect(0,0,img.getWidth(),img.getHeight()), new Rect(0,0,canvas.getWidth(), canvas.getHeight()), null);
+                    }
+                    srfcResumRival.getHolder().unlockCanvasAndPost(canvas);
+                }
+            }
+            @Override
+            public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {}
+            @Override
+            public void surfaceDestroyed(SurfaceHolder holder) {}
+        };
         taulerVaixells.getHolder().addCallback(callbackTaulers);
         taulerIntents.getHolder().addCallback(callbackTaulers);
+        srfcResumLocal.getHolder().addCallback(callbackResumLocal);
+        srfcResumRival.getHolder().addCallback(callbackResumRival);
 
         conjuntPistes.add(zonaPistes);
         conjuntPistes.add(caixaPistes);
@@ -134,6 +209,13 @@ public class MainActivity extends AppCompatActivity {
         conjuntPistes.add(textPistesRival);
         conjuntPistes.add(botoTancarPistes);
 
+        conjuntFinalJoc.add(zonaFinalJoc);
+        conjuntFinalJoc.add(caixaFinalJoc);
+        conjuntFinalJoc.add(botoTancarFinalJoc);
+        conjuntFinalJoc.add(titolFinalJoc);
+        conjuntFinalJoc.add(botoResum);
+        conjuntFinalJoc.add(srfcResumLocal);
+        conjuntFinalJoc.add(srfcResumRival);
         mostraPistes(false);
 
         newGame.setOnClickListener(v -> iniciarPartida());
@@ -149,26 +231,37 @@ public class MainActivity extends AppCompatActivity {
 
         tip.setOnClickListener(v -> {
             StringBuilder textVaixells = new StringBuilder("");
-            if (vaixellsVius.containsKey(Jugador.LOCAL)) {
-                for (Casella casella : vaixellsVius.get(Jugador.LOCAL).keySet()) {
-                    Vaixell vaixell = vaixellsVius.get(Jugador.LOCAL).get(casella);
-                    textVaixells.append(String.format("Vaixell de %s (%s): (%s,%s)\n", vaixell.mida, vaixell.id, casella.x, casella.y));
-                }
+            mappingVaixellCaselles.get(Jugador.LOCAL).forEach((vaixell, caselles) -> {
+                textVaixells.append(String.format("Vaixell de %s: ", vaixell.mida));
+                caselles.forEach((Casella casella) -> {
+                    if(vaixellsVius.get(Jugador.LOCAL).containsKey(casella))textVaixells.append(String.format("(%s,%s),", casella.x, casella.y));
+                    else textVaixells.append(String.format("<font color=#ff0000>(%s,%s)</font>,", casella.x, casella.y));
+                });
+                textVaixells.setLength(textVaixells.length()-1);
+                textVaixells.append("<br>");
+            });
+            textPistesMeus.setText(Html.fromHtml(textVaixells.toString()));
+            if(!onlineMode) {
+                textVaixells.setLength(0);
+                mappingVaixellCaselles.get(Jugador.RIVAL).forEach((vaixell, caselles) -> {
+                    textVaixells.append(String.format("Vaixell de %s: ", vaixell.mida));
+                    caselles.forEach((Casella casella) -> {
+                        if (vaixellsVius.get(Jugador.RIVAL).containsKey(casella))
+                            textVaixells.append(String.format("(%s,%s),", casella.x, casella.y));
+                        else
+                            textVaixells.append(String.format("<font color=#ff0000>(%s,%s)</font>,", casella.x, casella.y));
+                    });
+                    textVaixells.setLength(textVaixells.length() - 1);
+                    textVaixells.append("<br>");
+                });
+                textPistesRival.setText(Html.fromHtml(textVaixells.toString()));
             }
-            textPistesMeus.setText(textVaixells.toString());
-            textVaixells.setLength(0);
-            if (vaixellsVius.containsKey(Jugador.RIVAL)) {
-                for (Casella casella : vaixellsVius.get(Jugador.RIVAL).keySet()) {
-                    Vaixell vaixell = vaixellsVius.get(Jugador.RIVAL).get(casella);
-                    textVaixells.append(String.format("Vaixell de %s (%s): (%s,%s)\n", vaixell.mida, vaixell.id, casella.x, casella.y));
-                }
-            }
-            textPistesRival.setText(textVaixells.toString());
             mostraPistes(true);
         });
 
         botoTancarPistes.setOnClickListener(v -> mostraPistes(false));
-
+        botoTancarFinalJoc.setOnClickListener(v -> mostraFinalJoc(false));
+        botoResum.setOnClickListener(v -> mostraResumJoc());
         gestorWebSocket = new GestorWebSocket(
                 new GestorWebSocket.EscoltadorWebSocket() {
             @Override
@@ -208,7 +301,6 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        Log.d("LOG", "onResume: ");
     }
 
     private void actualitzaBotons() {
@@ -266,15 +358,14 @@ public class MainActivity extends AppCompatActivity {
         pTocat.setColor(Color.RED);
         pTocat.setAlpha(200);
 
+        Paint pPunt = new Paint();
+        pPunt.setColor(Color.BLACK);
         HashMap<Casella, Vaixell> tocats = vaixellsTocats.get(jugador);
 
         for (Casella c : atacsRival) {
             Paint pCurrent = (tocats != null && tocats.containsKey(c)) ? pTocat : pAigua;
             canvas.drawRoundRect(c.x * midaX + 2, c.y * midaY + 2, (c.x + 1) * midaX -2, (c.y + 1) * midaY -2, 20, 20, pCurrent);
-
-            Paint pMarc = new Paint();
-            pMarc.setColor(Color.BLACK);
-            canvas.drawCircle((c.x * midaX) + (midaX / 2), (c.y * midaY) + (midaY / 2), midaX / 6, pMarc);
+            canvas.drawCircle((c.x * midaX) + (midaX / 2), (c.y * midaY) + (midaY / 2), midaX / 6, pPunt);
         }
     }
 
@@ -285,6 +376,7 @@ public class MainActivity extends AppCompatActivity {
                 pintar(tauler, files, columnes, canvas);
                 tauler.getHolder().unlockCanvasAndPost(canvas);
             }
+
         }
     }
 
@@ -293,6 +385,100 @@ public class MainActivity extends AppCompatActivity {
         pintar(taulerIntents,10,10);
     }
 
+    private void pintarJugadaResum(Jugada j){
+        Jugador defensor = (j.jugador == Jugador.LOCAL) ? Jugador.RIVAL : Jugador.LOCAL;
+        SurfaceView srfc = (defensor == Jugador.LOCAL) ? srfcResumLocal : srfcResumRival;
+
+        Canvas canvas = srfc.getHolder().lockCanvas();
+
+        canvas.drawColor(Color.parseColor("#ADD8E6"));
+        Paint p = new Paint();
+        p.setColor(Color.WHITE);
+        p.setStrokeWidth(3);
+        int alt = srfc.getHeight();
+        int ampla = srfc.getWidth();
+        float midaX = ampla/(float) 10;
+        float midaY = alt/(float) 10;
+
+        for(int i = 0; i<=10; i++){
+            float x = i*midaX;
+            canvas.drawLine(x,0,x,alt,p);
+        }
+
+        for(int k = 0; k<=10; k++){
+            float y = k*midaY;
+            canvas.drawLine(0,y,ampla,y,p);
+        }
+
+
+        HashMap<Casella, Vaixell> mapCasellesVaixell = vaixells.get(defensor);
+        for (Casella casella : mapCasellesVaixell.keySet()) {
+            Vaixell vaixell = mapCasellesVaixell.get(casella);
+            Paint pRect = new Paint();
+            pRect.setStyle(Paint.Style.FILL);
+            pRect.setColor(vaixell.color);
+            canvas.drawRoundRect(casella.x * midaX + 2, casella.y * midaY + 2, (casella.x + 1) * midaX -2, (casella.y + 1) * midaY -2, 20, 20, pRect);
+        }
+
+
+        HashSet<Casella> atacsRebuts = (defensor == Jugador.LOCAL) ? casellesRival : casellesLocal;
+
+        Paint pAigua = new Paint();
+        pAigua.setColor(Color.WHITE);
+        pAigua.setAlpha(180);
+
+        Paint pTocat = new Paint();
+        pTocat.setColor(Color.RED);
+        pTocat.setAlpha(200);
+
+        Paint pPunt = new Paint();
+        pPunt.setColor(Color.BLACK);
+
+        HashMap<Casella, Vaixell> tocats = vaixellsTocats.get(defensor);
+
+        for (Casella c : atacsRebuts) {
+            Paint pCurrent = (tocats != null && tocats.containsKey(c)) ? pTocat : pAigua;
+            canvas.drawRoundRect(c.x * midaX + 2, c.y * midaY + 2, (c.x + 1) * midaX -2, (c.y + 1) * midaY -2, 20, 20, pCurrent);
+            canvas.drawCircle((c.x * midaX) + (midaX / 2), (c.y * midaY) + (midaY / 2), midaX / 6, pPunt);
+        }
+
+        srfc.getHolder().unlockCanvasAndPost(canvas);
+    }
+
+    private void mostraResumJoc(){
+        vaixellsVius.clear();
+        casellesRival.clear();
+        casellesLocal.clear();
+        vaixellsVius = (HashMap<Jugador, HashMap<Casella, Vaixell>>)vaixells.clone();
+        vaixellsTocats.clear();
+        vaixellsTocats.put(Jugador.LOCAL, new HashMap<>());
+        vaixellsTocats.put(Jugador.RIVAL, new HashMap<>());
+        Handler handler = new Handler(Looper.getMainLooper());
+        Runnable[] task = new Runnable[1];
+        Jugada jPintarGraelles = new Jugada(Jugador.LOCAL, new Casella(-1, -1));
+        pintarJugadaResum(jPintarGraelles);
+        jPintarGraelles.jugador = Jugador.RIVAL;
+        pintarJugadaResum(jPintarGraelles);
+        task[0] = new Runnable() {
+            @Override
+            public void run() {
+                if (!historial.isEmpty()) {
+                    Jugada j = historial.remove();
+                    HashSet caselles = j.jugador == Jugador.LOCAL?casellesLocal:casellesRival;
+                    Jugador defensor = j.jugador == Jugador.LOCAL?Jugador.RIVAL:Jugador.LOCAL;
+                    if(vaixellsVius.get(defensor).containsKey(j.casella)){
+                        Vaixell v = vaixellsVius.get(defensor).remove(j.casella);
+                        vaixellsTocats.get(defensor).put(j.casella, v);
+                    }
+                    caselles.add(j.casella);
+                    pintarJugadaResum(j);
+                    Log.d("JUGADA", String.format("Pintant jugada: jugador %s tira a (%s, %s)", j.jugador, j.casella.x, j.casella.y));
+                    handler.postDelayed(this, 200);
+                }
+            }
+        };
+        handler.post(task[0]);
+    }
     private Casella getCasella(float x, float y){
         int posX = (int)Math.floor(((x - taulerIntents.getX())/taulerIntents.getWidth())*10);
         int posY = (int)Math.floor(((y - taulerIntents.getY())/taulerIntents.getHeight())*10);
@@ -351,11 +537,22 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private void mostraFinalJoc(boolean mostrar) {
+        for (View v : conjuntFinalJoc) {
+            v.setVisibility(mostrar ? View.VISIBLE : View.GONE);
+        }
+    }
+
     private void iniciarPartida() {
         vaixellsVius.clear();
         vaixellsTocats.clear();
         casellesLocal.clear();
         casellesRival.clear();
+        historial.clear();
+        vaixells.clear();
+        vaixells.clear();
+        mappingVaixellCaselles.clear();
+        idVaixell = 0;
 
         vaixellsTocats.put(Jugador.LOCAL, new HashMap<>());
         vaixellsTocats.put(Jugador.RIVAL, new HashMap<>());
@@ -392,6 +589,7 @@ public class MainActivity extends AppCompatActivity {
         HashSet<Casella> destapades = (atacant == Jugador.LOCAL) ? casellesLocal : casellesRival;
         if (destapades.contains(c)) return;
         destapades.add(c);
+        historial.add(new Jugada(atacant, c));
 
         HashMap<Casella, Vaixell> vius = vaixellsVius.get(defensor);
         HashMap<Casella, Vaixell> tocats = vaixellsTocats.get(defensor);
@@ -464,6 +662,7 @@ public class MainActivity extends AppCompatActivity {
             actualitzaBotons();
             missatges.append("\n\nPARTIDA ACABADA. Guanya: " + (atacant == Jugador.LOCAL ? "Tu!" : "El Rival!"));
             scroll();
+            mostraFinalJoc(true);
             return;
         }
 
@@ -473,7 +672,6 @@ public class MainActivity extends AppCompatActivity {
                 estatJoc = EstatJoc.JUGANT;
             } else {
                 estatJoc = EstatJoc.EN_ESPERA;
-
                 if(!onlineMode){
                     taulerIntents.postDelayed(this::ferJugadaRobot, 500);
                 }
@@ -485,6 +683,7 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         }
+
     }
 
     private void ferJugadaRobot() {
@@ -547,10 +746,11 @@ public class MainActivity extends AppCompatActivity {
     public void crearVaixells(Jugador jugador) {
         if (!vaixellsVius.containsKey(jugador)) {
             vaixellsVius.put(jugador, new HashMap<>());
+            vaixells.put(jugador, new HashMap<>());
         }
-        int id = 0;
         HashMap<Casella, Vaixell> caselles = vaixellsVius.get(jugador);
-        int[] midaVaixells = {4, 3, 3, 2, 2, 2, 1, 1, 1, 1};
+        HashMap<Casella, Vaixell> caselles2 = vaixells.get(jugador);
+        int[] midaVaixells = {1, 1, 1, 1, 2, 2, 2, 3, 3, 4};
         int[] colors = {0xff706edd, 0xffdd866e, 0xffdd6ebe, 0xff6eddcf};
         Random rand = new Random();
 
@@ -570,15 +770,30 @@ public class MainActivity extends AppCompatActivity {
                     vaixell.mida = mida;
                     vaixell.orientacio = orientacio;
                     vaixell.jugador = jugador;
-                    vaixell.id = id++;
+                    vaixell.id = idVaixell++;
                     vaixell.tocat = 0;
                     vaixell.color = colors[mida - 1];
 
+                    TreeSet<Casella> casellesMapping = new TreeSet<>(new Comparator<Casella>() {
+                        @Override
+                        public int compare(Casella o1, Casella o2) {
+                            return o1.x == o2.x ? o1.y-o2.y : o1.x-o2.x;
+                        }
+                    });
                     for (int i = 0; i < mida; i++) {
                         int cx = x + (orientacio == Orientacio.HORITZONTAL ? i : 0);
                         int cy = y + (orientacio == Orientacio.VERTICAL ? i : 0);
+                        casellesMapping.add(new Casella(cx, cy));
                         caselles.put(new Casella(cx, cy), vaixell);
+                        caselles2.put(new Casella(cx, cy), vaixell);
                     }
+                    if(!mappingVaixellCaselles.containsKey(jugador))mappingVaixellCaselles.put(jugador, new TreeMap<>(new Comparator<Vaixell>() {
+                        @Override
+                        public int compare(Vaixell o1, Vaixell o2) {
+                            return o1.id - o2.id;
+                        }
+                    }));
+                    mappingVaixellCaselles.get(jugador).put(vaixell, casellesMapping);
                     colocat = true;
                 }
             }
@@ -589,7 +804,7 @@ public class MainActivity extends AppCompatActivity {
         if (orientacio == Orientacio.HORITZONTAL && x + mida - 1 > 9) return false;
         if (orientacio == Orientacio.VERTICAL && y + mida - 1 > 9) return false;
 
-        Set<Casella> nuevas = new HashSet<>();
+        Set<Casella> noves = new HashSet<>();
         HashMap<Casella, Vaixell> m = vaixellsVius.get(jugador);
 
         for (int i = 0; i < mida; i++) {
@@ -598,13 +813,13 @@ public class MainActivity extends AppCompatActivity {
             Casella c = new Casella(nx, ny);
 
             if (m != null && m.containsKey(c)) return false;
-            nuevas.add(c);
+            noves.add(c);
         }
 
         if (m == null) return true;
 
         for (Casella casella : m.keySet()) {
-            for (Casella n : nuevas) {
+            for (Casella n : noves) {
                 if (Math.max(Math.abs(n.x - casella.x), Math.abs(n.y - casella.y)) <= 1)
                     return false;
             }
@@ -652,6 +867,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void carregarVaixellsRival(JSONObject json){
         vaixellsVius.put(Jugador.RIVAL, new HashMap<>());
+        vaixells.put(Jugador.RIVAL, new HashMap<>());
 
         try{
             JSONArray llista = json.getJSONArray("casellesVaixellsVius");
@@ -677,6 +893,7 @@ public class MainActivity extends AppCompatActivity {
                 vaixell.jugador = Jugador.RIVAL;
 
                 vaixellsVius.get(Jugador.RIVAL).put(new Casella(j,i), vaixell);
+                vaixells.get(Jugador.RIVAL).put(new Casella(j,i), vaixell);
             }
         } catch(Exception e){
             mostrarMissatge("Error carregant vaixells rival: " + e.getMessage());
@@ -739,6 +956,7 @@ public class MainActivity extends AppCompatActivity {
             Casella c = new Casella(col,fila);
 
             casellesLocal.add(c);
+            historial.add(new Jugada(Jugador.LOCAL, c));
 
             if(resultat.equals("tocat") || resultat.equals("enfonsat")){
                 Vaixell v = vaixellsVius.get(Jugador.RIVAL).get(c);
@@ -751,7 +969,7 @@ public class MainActivity extends AppCompatActivity {
             if(acabat){
                 estatJoc = EstatJoc.ACABAT;
                 mostrarMissatge("PARTIDA ACABADA: Has guanyat!");
-
+                mostraFinalJoc(true);
                 if (onlineMode) {
                     onlineMode = false;
                     gestorWebSocket.tancar();

@@ -417,11 +417,18 @@ public class MainActivity extends AppCompatActivity {
         // Pinta les caselles tocades i amb aigua
 
         // ITERADOR??
-        for (Casella c : atacsRival) {
+        Iterator<Casella> iter = atacsRival.iterator();
+        while(iter.hasNext()){
+            Casella c = iter.next();
             Paint pCurrent = (tocats != null && tocats.get(c)!=null) ? pTocat : pAigua;
             canvas.drawRoundRect(c.x * midaX + 2, c.y * midaY + 2, (c.x + 1) * midaX -2, (c.y + 1) * midaY -2, 20, 20, pCurrent);
             canvas.drawCircle((c.x * midaX) + (midaX / 2), (c.y * midaY) + (midaY / 2), midaX / 6, pPunt);
         }
+        /*for (Casella c : atacsRival) {
+            Paint pCurrent = (tocats != null && tocats.get(c)!=null) ? pTocat : pAigua;
+            canvas.drawRoundRect(c.x * midaX + 2, c.y * midaY + 2, (c.x + 1) * midaX -2, (c.y + 1) * midaY -2, 20, 20, pCurrent);
+            canvas.drawCircle((c.x * midaX) + (midaX / 2), (c.y * midaY) + (midaY / 2), midaX / 6, pPunt);
+        }*/
     }
 
     /**
@@ -485,13 +492,24 @@ public class MainActivity extends AppCompatActivity {
 
         // Sempre dibuixa els vaixells
         HashMap<Casella, Vaixell> mapCasellesVaixell = vaixells.get(defensor);
-        for (Casella casella : mapCasellesVaixell.keySet()) {
-            Vaixell vaixell = mapCasellesVaixell.get(casella);
+
+        Iterator<Map.Entry<Casella, Vaixell>> iter = mapCasellesVaixell.entrySet().iterator();
+        while(iter.hasNext()){
+            Map.Entry<Casella, Vaixell> entry = iter.next();
+            Casella casella = entry.getKey();
+            Vaixell vaixell = entry.getValue();
             Paint pRect = new Paint();
             pRect.setStyle(Paint.Style.FILL);
             pRect.setColor(vaixell.color);
             canvas.drawRoundRect(casella.x * midaX + 2, casella.y * midaY + 2, (casella.x + 1) * midaX -2, (casella.y + 1) * midaY -2, 20, 20, pRect);
         }
+       /* for (Casella casella : mapCasellesVaixell.keySet()) {
+            Vaixell vaixell = mapCasellesVaixell.get(casella);
+            Paint pRect = new Paint();
+            pRect.setStyle(Paint.Style.FILL);
+            pRect.setColor(vaixell.color);
+            canvas.drawRoundRect(casella.x * midaX + 2, casella.y * midaY + 2, (casella.x + 1) * midaX -2, (casella.y + 1) * midaY -2, 20, 20, pRect);
+        }*/
 
 
         HashSet<Casella> atacsRebuts = (defensor == Jugador.LOCAL) ? casellesRival : casellesLocal;
@@ -509,12 +527,19 @@ public class MainActivity extends AppCompatActivity {
 
         HashMap<Casella, Vaixell> tocats = vaixellsTocats.get(defensor);
 
+        Iterator<Casella> itAtacsReb = atacsRebuts.iterator();
         // Pinta les caselles tocades i amb aigua
-        for (Casella c : atacsRebuts) {
+        while(itAtacsReb.hasNext()) {
+            Casella c = itAtacsReb.next();
+            Paint pCurrent = (tocats != null && tocats.get(c) != null) ? pTocat : pAigua;
+            canvas.drawRoundRect(c.x * midaX + 2, c.y * midaY + 2, (c.x + 1) * midaX - 2, (c.y + 1) * midaY - 2, 20, 20, pCurrent);
+            canvas.drawCircle((c.x * midaX) + (midaX / 2), (c.y * midaY) + (midaY / 2), midaX / 6, pPunt);
+        }
+        /*for (Casella c : atacsRebuts) {
             Paint pCurrent = (tocats != null && tocats.get(c)!=null) ? pTocat : pAigua;
             canvas.drawRoundRect(c.x * midaX + 2, c.y * midaY + 2, (c.x + 1) * midaX -2, (c.y + 1) * midaY -2, 20, 20, pCurrent);
             canvas.drawCircle((c.x * midaX) + (midaX / 2), (c.y * midaY) + (midaY / 2), midaX / 6, pPunt);
-        }
+        }*/
 
         srfc.getHolder().unlockCanvasAndPost(canvas);
     }
